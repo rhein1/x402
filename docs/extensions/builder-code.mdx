@@ -27,6 +27,8 @@ All codes must match `^[a-z0-9_]{1,32}$`:
 
 Declare your app builder code per-route in the payment middleware configuration:
 
+<Tabs>
+  <Tab title="TypeScript">
 ```typescript
 import { paymentMiddleware, x402ResourceServer } from "@x402/express";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
@@ -59,13 +61,58 @@ app.use(
   ),
 );
 ```
+  </Tab>
+  <Tab title="Go">
+```go
+import (
+    x402 "github.com/x402-foundation/x402/go/v2"
+    "github.com/x402-foundation/x402/go/v2/extensions/buildercode"
+    x402http "github.com/x402-foundation/x402/go/v2/http"
+    ginmw "github.com/x402-foundation/x402/go/v2/http/gin"
+    evm "github.com/x402-foundation/x402/go/v2/mechanisms/evm/exact/server"
+)
 
-`declareBuilderCodeExtension` validates the code format and returns the extension declaration (including the JSON Schema) for inclusion in the `PaymentRequired` response.
+facilitatorClient := x402http.NewHTTPFacilitatorClient(&x402http.FacilitatorConfig{
+    URL: facilitatorURL,
+})
+
+server := x402.Newx402ResourceServer(
+    x402.WithFacilitatorClient(facilitatorClient),
+).Register("eip155:84532", evm.NewExactEvmScheme())
+
+builderCodeExt := buildercode.DeclareBuilderCodeExtension("bc_my_app")
+extensions := make(map[string]interface{})
+for k, v := range builderCodeExt {
+    extensions[k] = v
+}
+
+routes := x402http.RoutesConfig{
+    "GET /weather": {
+        Accepts: x402http.PaymentOptions{
+            {
+                Scheme:  "exact",
+                Price:   "$0.001",
+                Network: "eip155:84532",
+                PayTo:   evmAddress,
+            },
+        },
+        Extensions: extensions,
+    },
+}
+
+r.Use(ginmw.PaymentMiddleware(routes, server))
+```
+  </Tab>
+</Tabs>
+
+`DeclareBuilderCodeExtension` validates the code format and returns the extension declaration (including the JSON Schema) for inclusion in the `PaymentRequired` response.
 
 ## Quickstart for Buyers (Clients)
 
 Register the `BuilderCodeClientExtension` on your x402 client. It automatically echoes the server's app code (`a`) and attaches your service code (`s`) to every payment payload:
 
+<Tabs>
+  <Tab title="TypeScript">
 ```typescript
 import { x402Client, wrapFetchWithPayment } from "@x402/fetch";
 import { ExactEvmScheme } from "@x402/evm/exact/client";
@@ -81,11 +128,41 @@ client.registerExtension(new BuilderCodeClientExtension("bc_my_client"));
 const fetchWithPayment = wrapFetchWithPayment(fetch, client);
 const response = await fetchWithPayment("https://api.example.com/weather");
 ```
+  </Tab>
+  <Tab title="Go">
+```go
+import (
+    x402 "github.com/x402-foundation/x402/go/v2"
+    "github.com/x402-foundation/x402/go/v2/extensions/buildercode"
+    x402http "github.com/x402-foundation/x402/go/v2/http"
+    exactevm "github.com/x402-foundation/x402/go/v2/mechanisms/evm/exact/client"
+    evmsigners "github.com/x402-foundation/x402/go/v2/signers/evm"
+)
+
+evmSigner, _ := evmsigners.NewClientSignerFromPrivateKey(evmPrivateKey)
+
+client := x402.Newx402Client()
+client.Register("eip155:*", exactevm.NewExactEvmScheme(evmSigner, &exactevm.ExactEvmSchemeConfig{
+    RPCURL: evmRpcURL,
+}))
+client.RegisterExtension(buildercode.NewBuilderCodeClientExtension("bc_my_client"))
+
+httpClient := x402http.WrapHTTPClientWithPayment(
+    http.DefaultClient,
+    x402http.Newx402HTTPClient(client),
+)
+
+resp, _ := httpClient.Get("https://api.example.com/weather")
+```
+  </Tab>
+</Tabs>
 
 ## Quickstart for Facilitators
 
 Register the `BuilderCodeFacilitatorExtension` on your facilitator. At settlement time it reads `a` and `s` from the payment payload, adds its own `w` code, and appends the ERC-8021 CBOR suffix to the transaction calldata:
 
+<Tabs>
+  <Tab title="TypeScript">
 ```typescript
 import { x402Facilitator } from "@x402/core/facilitator";
 import { BuilderCodeFacilitatorExtension } from "@x402/extensions/builder-code";
@@ -97,6 +174,24 @@ const facilitator = new x402Facilitator()
     }),
   );
 ```
+  </Tab>
+  <Tab title="Go">
+```go
+import (
+    x402 "github.com/x402-foundation/x402/go/v2"
+    "github.com/x402-foundation/x402/go/v2/extensions/buildercode"
+    evm "github.com/x402-foundation/x402/go/v2/mechanisms/evm/exact/facilitator"
+)
+
+facilitator := x402.Newx402Facilitator()
+facilitator.Register([]x402.Network{"eip155:84532"}, evm.NewExactEvmScheme(evmSigner, nil))
+
+facilitator.RegisterExtension(&buildercode.BuilderCodeFacilitatorExtension{
+    BuilderCode: "bc_my_facilitator",
+})
+```
+  </Tab>
+</Tabs>
 
 ## Protocol Flow
 
@@ -248,6 +343,9 @@ Full working examples are available in the x402 repository:
 - [TypeScript Server Example](https://github.com/x402-foundation/x402/tree/main/examples/typescript/servers/builder-code)
 - [TypeScript Client Example](https://github.com/x402-foundation/x402/tree/main/examples/typescript/clients/builder-code)
 - [TypeScript Facilitator Example](https://github.com/x402-foundation/x402/tree/main/examples/typescript/facilitator/builder-code)
+- [Go Server Example](https://github.com/x402-foundation/x402/tree/main/examples/go/servers/builder-code)
+- [Go Client Example](https://github.com/x402-foundation/x402/tree/main/examples/go/clients/builder-code)
+- [Go Facilitator Example](https://github.com/x402-foundation/x402/tree/main/examples/go/facilitator/builder-code)
 
 ## Further Reading
 
