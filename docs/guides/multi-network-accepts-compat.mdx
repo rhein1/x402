@@ -1,0 +1,43 @@
+---
+title: "Multi-Network accepts[] Compatibility"
+description: "Compatibility note for resource servers emitting multi-network accepts[] arrays in 402 challenges."
+---
+
+## Current behavior
+
+The legacy `x402-fetch` (v1) client validates every entry in the `accepts[]` array before selecting one for payment. Internally, it uses:
+
+```ts
+// x402-fetch/src/index.ts (v1, imports from x402/types)
+accepts.map(x => PaymentRequirementsSchema.parse(x))
+```
+
+If any entry contains a `network` value not in the `x402/types` schema's supported set, the parse throws and the client cannot complete payment — even if other entries in the array are valid.
+
+**Note:** v2 `@x402/fetch` (via `@x402/core`) already tolerates CAIP-2 and unknown networks — this limitation is specific to the v1 client. This note is relevant for resource servers that still need to serve the deployed v1 buyer base.
+
+## Impact on resource servers
+
+Resource servers that want to accept payment on multiple networks (e.g. Base mainnet + a newer chain) cannot include both in a single `accepts[]` array without breaking v1 `x402-fetch` clients.
+
+## Recommended workaround
+
+Until v1 buyers have migrated to `@x402/fetch` (v2), emit only entries with network values from the v1 SDK's supported set.
+
+```js
+// Works — recognized network name (v1 and v2 compatible)
+{ "accepts": [{ "network": "base", "scheme": "exact", ... }] }
+
+// Breaks v1 x402-fetch — unrecognized network fails parse, kills entire flow
+// (v2 @x402/fetch handles this correctly)
+{ "accepts": [
+  { "network": "base", ... },
+  { "network": "eip155:480", ... }
+] }
+```
+
+If your resource server supports additional networks, either return the most widely supported entry or use separate endpoints per network.
+
+## Tracking
+
+See [#2729](https://github.com/x402-foundation/x402/issues/2729) for the upstream issue.
